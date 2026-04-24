@@ -1,10 +1,51 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import MilestoneCelebration from './MilestoneCelebration';
+import { getUnseenNotificationsCount, checkMilestones } from '../utils/api';
 
 const Layout = ({ children }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const [celebrationMilestone, setCelebrationMilestone] = useState(null);
   const location = useLocation();
+
+  useEffect(() => {
+    fetchUnseenCount();
+    checkForNewMilestones();
+    const interval = setInterval(() => {
+      fetchUnseenCount();
+      checkForNewMilestones();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchUnseenCount = async () => {
+    try {
+      const response = await getUnseenNotificationsCount();
+      setUnseenCount(response.data.count || 0);
+    } catch (error) {
+      console.error('Error fetching unseen notifications count:', error);
+    }
+  };
+
+  const checkForNewMilestones = async () => {
+    try {
+      const response = await checkMilestones();
+      const newlyUnlocked = response.data.newlyUnlocked || [];
+      
+      // Show celebration for the first newly unlocked milestone
+      if (newlyUnlocked.length > 0) {
+        setCelebrationMilestone(newlyUnlocked[0]);
+      }
+    } catch (error) {
+      console.error('Error checking milestones:', error);
+    }
+  };
+
+  const handleMilestoneCelebrationClose = () => {
+    setCelebrationMilestone(null);
+  };
 
   const menuItems = [
     {
@@ -24,6 +65,16 @@ const Layout = ({ children }) => {
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
         </svg>
       )
+    },
+    {
+      title: 'Price Alerts',
+      path: '/price-alerts',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-6 h-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+        </svg>
+      ),
+      badge: unseenCount
     },
     {
       title: 'Statistics',
@@ -49,6 +100,12 @@ const Layout = ({ children }) => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex font-sans antialiased">
       <Sidebar />
+      
+      {/* Milestone Celebration Modal */}
+      <MilestoneCelebration 
+        milestone={celebrationMilestone} 
+        onClose={handleMilestoneCelebrationClose} 
+      />
       
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <nav className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40 transition-all duration-300">
@@ -137,6 +194,11 @@ const Layout = ({ children }) => {
                       {item.icon}
                     </div>
                     <span className="truncate">{item.title}</span>
+                    {item.badge && item.badge > 0 && (
+                      <span className="ml-auto bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
                   </Link>
                 ))}
               </nav>

@@ -33,4 +33,20 @@ export const importGames = (games, skipDuplicates = true) => api.post('/games/im
 // Duplicate checking
 export const checkDuplicate = (title, platform_id) => api.get('/games/check-duplicate', { params: { title, platform_id } });
 
+// Price Alerts
+export const getPriceAlerts = () => api.get('/price-alerts');
+export const createPriceAlert = (game_id, target_price) => api.post('/price-alerts', { game_id, target_price });
+export const updatePriceAlert = (gameId, target_price, is_active) => api.put(`/price-alerts/${gameId}`, { target_price, is_active });
+export const deletePriceAlert = (gameId) => api.delete(`/price-alerts/${gameId}`);
+export const getPriceAlertNotifications = () => api.get('/price-alerts/notifications');
+export const markNotificationSeen = (id) => api.put(`/price-alerts/notifications/${id}/seen`);
+export const checkPricesForAlerts = () => api.post('/price-alerts/check');
+export const getUnseenNotificationsCount = () => api.get('/price-alerts/notifications/count');
+
+// Milestones
+export const getMilestones = () => api.get('/milestones');
+export const checkMilestones = () => api.post('/milestones/check');
+export const markMilestoneSeen = (id) => api.put(`/milestones/${id}/seen`);
+export const getUnseenMilestonesCount = () => api.get('/milestones/unseen/count');
+
 export default api;

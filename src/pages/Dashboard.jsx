@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getDashboardStats, getRecentGames } from '../utils/api';
+import { getDashboardStats, getRecentGames, getMilestones } from '../utils/api';
 import useSettings from '../hooks/useSettings';
 
 const Dashboard = () => {
@@ -10,22 +10,26 @@ const Dashboard = () => {
     completed: 0
   });
   const [recentGames, setRecentGames] = useState([]);
+  const [milestones, setMilestones] = useState([]);
   const [loading, setLoading] = useState(true);
   const { formatCurrency } = useSettings();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsResponse, recentResponse] = await Promise.all([
+        const [statsResponse, recentResponse, milestonesResponse] = await Promise.all([
           getDashboardStats(),
-          getRecentGames()
+          getRecentGames(),
+          getMilestones()
         ]);
         setStats(statsResponse.data || { totalGames: 0, totalValue: 0, completed: 0 });
         setRecentGames(Array.isArray(recentResponse.data) ? recentResponse.data : []);
+        setMilestones(Array.isArray(milestonesResponse.data) ? milestonesResponse.data : []);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
         setStats({ totalGames: 0, totalValue: 0, completed: 0 });
         setRecentGames([]);
+        setMilestones([]);
       } finally {
         setLoading(false);
       }
@@ -141,6 +145,72 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Collection Milestones */}
+        {milestones.length > 0 && (
+          <div className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-black text-gray-900 dark:text-white">Collection Milestones</h2>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {milestones.filter(m => m.unlocked).length} of {milestones.length} unlocked
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+              {milestones.slice(0, 16).map(milestone => (
+                <div
+                  key={milestone.id}
+                  className={`group bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border transition-all duration-300 ${
+                    milestone.unlocked 
+                      ? 'border-yellow-200 dark:border-yellow-800 hover:shadow-lg hover:-translate-y-1' 
+                      : 'border-gray-100 dark:border-gray-700 opacity-60'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className={`inline-flex items-center justify-center w-12 h-12 rounded-full text-2xl mb-3 ${
+                      milestone.unlocked 
+                        ? `${milestone.color} text-white shadow-lg` 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
+                    }`}>
+                      {milestone.unlocked ? milestone.icon : '🔒'}
+                    </div>
+                    
+                    <h3 className={`font-bold text-sm mb-1 ${
+                      milestone.unlocked 
+                        ? 'text-gray-900 dark:text-white' 
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {milestone.title}
+                    </h3>
+                    
+                    <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                      {milestone.description}
+                    </p>
+                    
+                    {milestone.unlocked && milestone.unlocked_at && (
+                      <div className="mt-2 text-xs text-yellow-600 dark:text-yellow-400 font-medium">
+                        {new Date(milestone.unlocked_at).toLocaleDateString('en-GB', { 
+                          month: 'short', 
+                          day: 'numeric' 
+                        })}
+                      </div>
+                    )}
+                    
+                    {!milestone.unlocked && (
+                      <div className="mt-2">
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                          {milestone.threshold} {milestone.type === 'games' ? 'games' : 
+                           milestone.type === 'completed' ? 'completed' :
+                           milestone.type === 'platforms' ? 'platforms' : 'value'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Recently Added Games */}
         {recentGames.length > 0 && (
