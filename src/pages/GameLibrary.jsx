@@ -1,0 +1,566 @@
+import { useState, useEffect } from 'react';
+import { getGames, getPlatforms, createGame, updateGame, deleteGame, bulkCreateGames } from '../utils/api';
+import GameCard from '../components/GameCard';
+import GameSearchAutocomplete from '../components/GameSearchAutocomplete';
+
+const GameLibrary = () => {
+  const [games, setGames] = useState({ data: [], pagination: {} });
+  const [platforms, setPlatforms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingGame, setEditingGame] = useState(null);
+  const [viewMode, setViewMode] = useState('gallery');
+  const [isBulk, setIsBulk] = useState(false);
+
+  // Filters
+  const [filters, setFilters] = useState({
+    search: '',
+    platform_id: '',
+    status: 'all',
+    purchased: 'true',
+    order_by: 'created_at',
+    direction: 'desc',
+    page: 1,
+    per_page: 24
+  });
+
+  // Form state
+  const [formData, setFormData] = useState({
+    title: '',
+    platform_id: '',
+    price: '',
+    current_price: '',
+    price_source: '',
+    purchase_location: '',
+    purchased: true,
+    image_url: '',
+    metascore: '',
+    released_at: '',
+    genres: '',
+    rating: '',
+    status: 'uncategorized'
+  });
+
+  useEffect(() => {
+    fetchGames();
+    fetchPlatforms();
+  }, [filters]);
+
+  const fetchGames = async () => {
+    try {
+      setLoading(true);
+      const response = await getGames(filters);
+      setGames(response.data);
+    } catch (error) {
+      console.error('Error fetching games:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPlatforms = async () => {
+    try {
+      const response = await getPlatforms();
+      setPlatforms(response.data);
+    } catch (error) {
+      console.error('Error fetching platforms:', error);
+    }
+  };
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value,
+      page: 1 // Reset to first page when filtering
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    try {
+      if (isBulk) {
+        const titles = formData.title.split('\n').filter(t => t.trim().length > 0);
+        const games = titles.map(title => ({
+          title: title.trim(),
+          platform_id: formData.platform_id,
+          price: formData.price,
+          current_price: formData.current_price,
+          purchase_location: formData.purchase_location,
+          purchased: formData.purchased
+        }));
+        await bulkCreateGames(games);
+      } else if (editingGame) {
+        await updateGame(editingGame.id, formData);
+      } else {
+        await createGame(formData);
+      }
+      
+      setShowModal(false);
+      setEditingGame(null);
+      setIsBulk(false);
+      resetForm();
+      fetchGames();
+    } catch (error) {
+      console.error('Error saving game:', error);
+    }
+  };
+
+  const handleEdit = (game) => {
+    setEditingGame(game);
+    setFormData({
+      title: game.title,
+      platform_id: game.platform_id,
+      price: game.price || '',
+      current_price: game.current_price || '',
+      price_source: game.price_source || '',
+      purchase_location: game.purchase_location || '',
+      purchased: game.purchased,
+      image_url: game.image_url || '',
+      metascore: game.metascore || '',
+      released_at: game.released_at || '',
+      genres: game.genres || '',
+      rating: game.rating || '',
+      status: game.status || 'uncategorized'
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (game) => {
+    if (confirm(`Are you sure you want to delete "${game.title}"?`)) {
+      try {
+        await deleteGame(game.id);
+        fetchGames();
+      } catch (error) {
+        console.error('Error deleting game:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      platform_id: '',
+      price: '',
+      current_price: '',
+      price_source: '',
+      purchase_location: '',
+      purchased: true,
+      image_url: '',
+      metascore: '',
+      released_at: '',
+      genres: '',
+      rating: '',
+      status: 'uncategorized'
+    });
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: 'GBP',
+    }).format(value || 0);
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800';
+      case 'currently_playing':
+        return 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+      case 'played':
+        return 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800';
+      case 'not_played':
+        return 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800';
+      default:
+        return 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600';
+    }
+  };
+
+  return (
+    <div className="py-12">
+      <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
+          <h2 className="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">
+            My Collection
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                resetForm();
+                setEditingGame(null);
+                setIsBulk(false);
+                setShowModal(true);
+              }}
+              className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition"
+            >
+              Add Game
+            </button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-2xl mb-6 p-5 border border-gray-100 dark:border-gray-700">
+          <div className="flex flex-col xl:flex-row gap-4 justify-between items-center">
+            <div className="flex gap-6 text-gray-900 dark:text-gray-100 w-full xl:w-auto justify-between xl:justify-start">
+              <div>
+                <span className="text-xs font-bold block text-gray-400 uppercase tracking-wider mb-1">
+                  {filters.purchased === 'true' ? 'Collection Value' : 'Wishlist Value'}
+                </span>
+                <span className="text-3xl text-indigo-600 dark:text-indigo-400 font-black tracking-tight">
+                  {formatCurrency(games.data?.reduce((sum, game) => sum + (game.current_price || 0), 0) || 0)}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-3 w-full xl:w-auto items-center justify-start xl:justify-end">
+              {/* View Toggle */}
+              <div className="flex bg-gray-100 dark:bg-gray-700/50 rounded-xl p-1">
+                <button
+                  onClick={() => setViewMode('gallery')}
+                  className={`p-2 rounded-lg transition-all duration-200 ${
+                    viewMode === 'gallery'
+                      ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-400'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                  }`}
+                  title="Gallery View"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-lg transition-all duration-200 ${
+                    viewMode === 'list'
+                      ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-400'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                  }`}
+                  title="List View"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+
+              <input
+                type="text"
+                placeholder="Search collection..."
+                value={filters.search}
+                onChange={(e) => handleFilterChange('search', e.target.value)}
+                className="w-full p-2 sm:w-64 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+              />
+              
+              <select
+                value={filters.platform_id}
+                onChange={(e) => handleFilterChange('platform_id', e.target.value)}
+                className="p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm w-full sm:w-auto cursor-pointer"
+              >
+                <option value="">All Platforms</option>
+                {platforms.map(platform => (
+                  <option key={platform.id} value={platform.id}>
+                    {platform.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filters.purchased}
+                onChange={(e) => handleFilterChange('purchased', e.target.value)}
+                className="p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm cursor-pointer"
+              >
+                <option value="true">Collection</option>
+                <option value="false">Wishlist</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="animate-pulse">
+                <div className="bg-gray-200 dark:bg-gray-700 rounded-2xl h-64"></div>
+              </div>
+            ))}
+          </div>
+        ) : games.data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">No games found</h3>
+            <p className="mb-6">Get started by adding games to your collection.</p>
+            <button
+              onClick={() => {
+                resetForm();
+                setShowModal(true);
+              }}
+              className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition"
+            >
+              Add Your First Game
+            </button>
+          </div>
+        ) : viewMode === 'gallery' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {games.data.map(game => (
+              <GameCard 
+                key={game.id} 
+                game={game} 
+                onEdit={handleEdit} 
+                onDelete={handleDelete} 
+                viewMode="gallery" 
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {games.data.map(game => (
+              <GameCard 
+                key={game.id} 
+                game={game} 
+                onEdit={handleEdit} 
+                onDelete={handleDelete} 
+                viewMode="list" 
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Modal */}
+        {showModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+                {editingGame ? 'Edit Game' : 'Add New Game'}
+              </h2>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="flex items-center gap-4 mb-4">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={isBulk}
+                      onChange={(e) => setIsBulk(e.target.checked)}
+                      className="mr-2"
+                      disabled={editingGame}
+                    />
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Bulk Add</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {isBulk ? 'Titles (One per line)' : 'Title'}
+                  </label>
+                  {isBulk ? (
+                    <textarea
+                      value={formData.title}
+                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                      rows="5"
+                      placeholder="Game 1&#10;Game 2&#10;Game 3"
+                      required
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.title}
+                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                      placeholder="Game Title"
+                      required
+                    />
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Platform
+                    </label>
+                    <select
+                      value={formData.platform_id}
+                      onChange={(e) => setFormData(prev => ({ ...prev, platform_id: e.target.value }))}
+                      className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                      required
+                    >
+                      <option value="">Select Platform</option>
+                      {platforms.map(platform => (
+                        <option key={platform.id} value={platform.id}>
+                          {platform.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Status
+                    </label>
+                    <select
+                      value={formData.status}
+                      onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                      className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                    >
+                      <option value="uncategorized">Uncategorized</option>
+                      <option value="not_played">Not Played</option>
+                      <option value="currently_playing">Currently Playing</option>
+                      <option value="played">Played</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Price Paid
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price}
+                      onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
+                      className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Current Value
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.current_price}
+                      onChange={(e) => setFormData(prev => ({ ...prev, current_price: e.target.value }))}
+                      className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                {!isBulk && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Image URL
+                      </label>
+                      <input
+                        type="url"
+                        value={formData.image_url}
+                        onChange={(e) => setFormData(prev => ({ ...prev, image_url: e.target.value }))}
+                        className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                        placeholder="https://..."
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Release Date
+                        </label>
+                        <input
+                          type="date"
+                          value={formData.released_at}
+                          onChange={(e) => setFormData(prev => ({ ...prev, released_at: e.target.value }))}
+                          className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Metascore
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={formData.metascore}
+                          onChange={(e) => setFormData(prev => ({ ...prev, metascore: e.target.value }))}
+                          className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                          placeholder="85"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Rating
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="5"
+                          value={formData.rating}
+                          onChange={(e) => setFormData(prev => ({ ...prev, rating: e.target.value }))}
+                          className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                          placeholder="4.5"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Genres
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.genres}
+                        onChange={(e) => setFormData(prev => ({ ...prev, genres: e.target.value }))}
+                        className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                        placeholder="Action, Adventure, RPG"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={formData.purchased}
+                      onChange={(e) => setFormData(prev => ({ ...prev, purchased: e.target.checked }))}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Purchased (uncheck for wishlist)</span>
+                  </label>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition font-medium"
+                  >
+                    {editingGame ? 'Update Game' : isBulk ? 'Add Games' : 'Add Game'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowModal(false);
+                      setEditingGame(null);
+                      setIsBulk(false);
+                      resetForm();
+                    }}
+                    className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default GameLibrary;
