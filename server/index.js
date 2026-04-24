@@ -8,10 +8,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://your-app.vercel.app'] // Replace with your actual Vercel domain
+    : ['http://localhost:5173', 'http://localhost:3000']
+}));
 app.use(express.json());
 
 // Database setup
@@ -47,11 +51,22 @@ db.serialize(() => {
       genres TEXT,
       rating DECIMAL(3,1),
       status TEXT DEFAULT 'uncategorized',
+      notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (platform_id) REFERENCES platforms (id)
     )
   `);
+
+  // Add notes column if it doesn't exist (migration)
+  db.run(`
+    ALTER TABLE games ADD COLUMN notes TEXT
+  `, (err) => {
+    // Ignore error if column already exists
+    if (err && !err.message.includes('duplicate column name')) {
+      console.error('Error adding notes column:', err);
+    }
+  });
 
   // Collections table
   db.run(`
@@ -337,6 +352,33 @@ app.get('/api/dashboard/stats', (req, res) => {
   });
 });
 
+// Get recent games for dashboard
+app.get('/api/dashboard/recent', (req, res) => {
+  db.all(`
+    SELECT g.*, p.name as platform_name, p.slug as platform_slug
+    FROM games g
+    LEFT JOIN platforms p ON g.platform_id = p.id
+    ORDER BY g.created_at DESC
+    LIMIT 8
+  `, (err, games) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    const formattedGames = games.map(game => ({
+      ...game,
+      platform: {
+        id: game.platform_id,
+        name: game.platform_name,
+        slug: game.platform_slug
+      }
+    }));
+    
+    res.json(formattedGames);
+  });
+});
+
 // Create a new game
 app.post('/api/games', (req, res) => {
   const {
@@ -352,17 +394,18 @@ app.post('/api/games', (req, res) => {
     released_at,
     genres,
     rating,
-    status = 'uncategorized'
+    status = 'uncategorized',
+    notes
   } = req.body;
 
   db.run(`
     INSERT INTO games (
       title, platform_id, price, current_price, price_source, purchase_location,
-      purchased, image_url, metascore, released_at, genres, rating, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      purchased, image_url, metascore, released_at, genres, rating, status, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     title, platform_id, price, current_price, price_source, purchase_location,
-    purchased ? 1 : 0, image_url, metascore, released_at, genres, rating, status
+    purchased ? 1 : 0, image_url, metascore, released_at, genres, rating, status, notes
   ], function(err) {
     if (err) {
       res.status(500).json({ error: err.message });
@@ -422,18 +465,19 @@ app.put('/api/games/:id', (req, res) => {
     released_at,
     genres,
     rating,
-    status
+    status,
+    notes
   } = req.body;
 
   db.run(`
     UPDATE games SET
       title = ?, platform_id = ?, price = ?, current_price = ?, price_source = ?,
       purchase_location = ?, purchased = ?, image_url = ?, metascore = ?,
-      released_at = ?, genres = ?, rating = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+      released_at = ?, genres = ?, rating = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
     title, platform_id, price, current_price, price_source, purchase_location,
-    purchased ? 1 : 0, image_url, metascore, released_at, genres, rating, status, id
+    purchased ? 1 : 0, image_url, metascore, released_at, genres, rating, status, notes, id
   ], function(err) {
     if (err) {
       res.status(500).json({ error: err.message });
@@ -596,9 +640,37 @@ app.delete('/api/games/bulk', (req, res) => {
   });
 });
 
+// Check for duplicate games
+app.get('/api/games/check-duplicate', (req, res) => {
+  const { title, platform_id } = req.query;
+  
+  if (!title || !platform_id) {
+    return res.status(400).json({ error: 'Title and platform_id are required' });
+  }
+
+  db.all(`
+    SELECT g.*, p.name as platform_name
+    FROM games g
+    LEFT JOIN platforms p ON g.platform_id = p.id
+    WHERE LOWER(g.title) = LOWER(?) AND g.platform_id = ?
+  `, [title, platform_id], (err, duplicates) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    res.json({ 
+      duplicates: duplicates.map(game => ({
+        ...game,
+        platform: { name: game.platform_name }
+      }))
+    });
+  });
+});
+
 // Import games from JSON
 app.post('/api/games/import', (req, res) => {
-  const { games } = req.body;
+  const { games, skipDuplicates = true } = req.body;
   
   if (!Array.isArray(games)) {
     return res.status(400).json({ error: 'Games array is required' });
@@ -607,42 +679,118 @@ app.post('/api/games/import', (req, res) => {
   const stmt = db.prepare(`
     INSERT INTO games (
       title, platform_id, price, current_price, price_source, purchase_location,
-      purchased, image_url, metascore, released_at, genres, rating, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      purchased, image_url, metascore, released_at, genres, rating, status, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let count = 0;
   let errors = 0;
+  let duplicatesSkipped = 0;
+  const duplicatesList = [];
 
-  games.forEach(game => {
-    stmt.run([
-      game.title,
-      game.platform_id,
-      game.price,
-      game.current_price,
-      game.price_source,
-      game.purchase_location,
-      game.purchased ? 1 : 0,
-      game.image_url,
-      game.metascore,
-      game.released_at,
-      game.genres,
-      game.rating,
-      game.status || 'uncategorized'
-    ], (err) => {
-      if (err) {
+  // Check for duplicates first if skipDuplicates is enabled
+  const processGame = (game, callback) => {
+    if (skipDuplicates) {
+      db.get(`
+        SELECT id, title FROM games 
+        WHERE LOWER(title) = LOWER(?) AND platform_id = ?
+      `, [game.title, game.platform_id], (err, existing) => {
+        if (err) {
+          callback(err);
+          return;
+        }
+        
+        if (existing) {
+          duplicatesSkipped++;
+          duplicatesList.push({
+            title: game.title,
+            platform_id: game.platform_id,
+            existing_id: existing.id
+          });
+          callback(null, 'duplicate');
+          return;
+        }
+        
+        // No duplicate found, insert the game
+        stmt.run([
+          game.title,
+          game.platform_id,
+          game.price,
+          game.current_price,
+          game.price_source,
+          game.purchase_location,
+          game.purchased ? 1 : 0,
+          game.image_url,
+          game.metascore,
+          game.released_at,
+          game.genres,
+          game.rating,
+          game.status || 'uncategorized',
+          game.notes
+        ], (err) => {
+          if (err) {
+            callback(err);
+          } else {
+            count++;
+            callback(null, 'inserted');
+          }
+        });
+      });
+    } else {
+      // Skip duplicate check, just insert
+      stmt.run([
+        game.title,
+        game.platform_id,
+        game.price,
+        game.current_price,
+        game.price_source,
+        game.purchase_location,
+        game.purchased ? 1 : 0,
+        game.image_url,
+        game.metascore,
+        game.released_at,
+        game.genres,
+        game.rating,
+        game.status || 'uncategorized',
+        game.notes
+      ], (err) => {
+        if (err) {
+          callback(err);
+        } else {
+          count++;
+          callback(null, 'inserted');
+        }
+      });
+    }
+  };
+
+  // Process games sequentially
+  let processed = 0;
+  const processNext = () => {
+    if (processed >= games.length) {
+      stmt.finalize(() => {
+        res.json({ 
+          message: `Import completed: ${count} games imported successfully${errors > 0 ? `, ${errors} errors` : ''}${duplicatesSkipped > 0 ? `, ${duplicatesSkipped} duplicates skipped` : ''}`,
+          imported: count,
+          errors,
+          duplicatesSkipped,
+          duplicates: duplicatesList
+        });
+      });
+      return;
+    }
+
+    const game = games[processed];
+    processGame(game, (err, result) => {
+      if (err && result !== 'duplicate') {
         errors++;
-      } else {
-        count++;
       }
+      processed++;
+      processNext();
     });
-  });
+  };
 
-  stmt.finalize(() => {
-    res.json({ 
-      message: `Import completed: ${count} games imported successfully${errors > 0 ? `, ${errors} errors` : ''}` 
-    });
-  });
+  processNext();
 });
 
 // Start server
