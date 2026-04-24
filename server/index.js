@@ -106,6 +106,51 @@ db.serialize(() => {
     )
   `);
 
+  // Price alerts table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS price_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id INTEGER NOT NULL,
+      target_price DECIMAL(10,2),
+      is_active BOOLEAN DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (game_id) REFERENCES games (id)
+    )
+  `);
+
+  // Price alert notifications table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS price_alert_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id INTEGER NOT NULL,
+      old_price DECIMAL(10,2),
+      new_price DECIMAL(10,2) NOT NULL,
+      platform_name TEXT NOT NULL,
+      url TEXT,
+      seen BOOLEAN DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (game_id) REFERENCES games (id)
+    )
+  `);
+
+  // Milestones table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS milestones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      threshold INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      icon TEXT NOT NULL,
+      color TEXT NOT NULL,
+      unlocked BOOLEAN DEFAULT 0,
+      seen BOOLEAN DEFAULT 0,
+      unlocked_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Seed platforms
   const platforms = [
     { name: 'PlayStation 5', slug: 'ps5' },
@@ -128,6 +173,46 @@ db.serialize(() => {
     db.run(
       'INSERT OR IGNORE INTO platforms (name, slug) VALUES (?, ?)',
       [platform.name, platform.slug]
+    );
+  });
+
+  // Seed milestones
+  const milestones = [
+    // Game Count Milestones
+    { type: 'games', threshold: 1, title: 'First Game', description: 'Added your first game to the collection', icon: '🎮', color: 'bg-green-500' },
+    { type: 'games', threshold: 10, title: 'Getting Started', description: 'Reached 10 games in your collection', icon: '📚', color: 'bg-blue-500' },
+    { type: 'games', threshold: 25, title: 'Growing Collection', description: 'Reached 25 games in your collection', icon: '📦', color: 'bg-purple-500' },
+    { type: 'games', threshold: 50, title: 'Serious Collector', description: 'Reached 50 games in your collection', icon: '🏆', color: 'bg-yellow-500' },
+    { type: 'games', threshold: 100, title: 'Century Club', description: 'Reached 100 games in your collection', icon: '💯', color: 'bg-orange-500' },
+    { type: 'games', threshold: 250, title: 'Master Collector', description: 'Reached 250 games in your collection', icon: '👑', color: 'bg-red-500' },
+    { type: 'games', threshold: 500, title: 'Legendary Collection', description: 'Reached 500 games in your collection', icon: '⭐', color: 'bg-indigo-500' },
+    { type: 'games', threshold: 1000, title: 'Ultimate Collector', description: 'Reached 1000 games in your collection', icon: '🌟', color: 'bg-pink-500' },
+    
+    // Value Milestones (in pence for SQLite)
+    { type: 'value', threshold: 10000, title: 'First £100', description: 'Collection worth £100', icon: '💷', color: 'bg-green-500' },
+    { type: 'value', threshold: 50000, title: 'Half Grand', description: 'Collection worth £500', icon: '💰', color: 'bg-blue-500' },
+    { type: 'value', threshold: 100000, title: 'Grand Collection', description: 'Collection worth £1,000', icon: '💎', color: 'bg-purple-500' },
+    { type: 'value', threshold: 500000, title: 'High Roller', description: 'Collection worth £5,000', icon: '🏦', color: 'bg-yellow-500' },
+    { type: 'value', threshold: 1000000, title: 'Treasure Trove', description: 'Collection worth £10,000', icon: '🏰', color: 'bg-orange-500' },
+    
+    // Completion Milestones
+    { type: 'completed', threshold: 1, title: 'First Completion', description: 'Completed your first game', icon: '✅', color: 'bg-green-500' },
+    { type: 'completed', threshold: 5, title: 'Getting Things Done', description: 'Completed 5 games', icon: '🎯', color: 'bg-blue-500' },
+    { type: 'completed', threshold: 10, title: 'Finisher', description: 'Completed 10 games', icon: '🏁', color: 'bg-purple-500' },
+    { type: 'completed', threshold: 25, title: 'Completionist', description: 'Completed 25 games', icon: '🏅', color: 'bg-yellow-500' },
+    { type: 'completed', threshold: 50, title: 'Achievement Hunter', description: 'Completed 50 games', icon: '🎖️', color: 'bg-orange-500' },
+    { type: 'completed', threshold: 100, title: 'Master Finisher', description: 'Completed 100 games', icon: '👑', color: 'bg-red-500' },
+    
+    // Platform Milestones
+    { type: 'platforms', threshold: 3, title: 'Multi-Platform', description: 'Games on 3 different platforms', icon: '🎮', color: 'bg-green-500' },
+    { type: 'platforms', threshold: 5, title: 'Platform Explorer', description: 'Games on 5 different platforms', icon: '🗺️', color: 'bg-blue-500' },
+    { type: 'platforms', threshold: 10, title: 'Platform Master', description: 'Games on 10 different platforms', icon: '🌍', color: 'bg-purple-500' }
+  ];
+
+  milestones.forEach(milestone => {
+    db.run(
+      'INSERT OR IGNORE INTO milestones (type, threshold, title, description, icon, color) VALUES (?, ?, ?, ?, ?, ?)',
+      [milestone.type, milestone.threshold, milestone.title, milestone.description, milestone.icon, milestone.color]
     );
   });
 });
@@ -791,6 +876,323 @@ app.post('/api/games/import', (req, res) => {
   };
 
   processNext();
+});
+
+// Price Alerts API Routes
+
+// Get all price alerts
+app.get('/api/price-alerts', (req, res) => {
+  db.all(`
+    SELECT pa.*, g.title, g.image_url, g.current_price, p.name as platform_name
+    FROM price_alerts pa
+    LEFT JOIN games g ON pa.game_id = g.id
+    LEFT JOIN platforms p ON g.platform_id = p.id
+    WHERE pa.is_active = 1
+    ORDER BY pa.created_at DESC
+  `, (err, alerts) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(alerts || []);
+  });
+});
+
+// Create a price alert
+app.post('/api/price-alerts', (req, res) => {
+  const { game_id, target_price } = req.body;
+  
+  if (!game_id) {
+    return res.status(400).json({ error: 'game_id is required' });
+  }
+
+  // Check if alert already exists
+  db.get('SELECT id FROM price_alerts WHERE game_id = ? AND is_active = 1', [game_id], (err, existing) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    if (existing) {
+      return res.status(400).json({ error: 'Price alert already exists for this game' });
+    }
+
+    db.run(`
+      INSERT INTO price_alerts (game_id, target_price)
+      VALUES (?, ?)
+    `, [game_id, target_price], function(err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json({ id: this.lastID, message: 'Price alert created successfully' });
+    });
+  });
+});
+
+// Update a price alert
+app.put('/api/price-alerts/:gameId', (req, res) => {
+  const { gameId } = req.params;
+  const { target_price, is_active } = req.body;
+
+  db.run(`
+    UPDATE price_alerts SET
+      target_price = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE game_id = ?
+  `, [target_price, is_active ? 1 : 0, gameId], function(err) {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json({ message: 'Price alert updated successfully' });
+  });
+});
+
+// Delete a price alert
+app.delete('/api/price-alerts/:gameId', (req, res) => {
+  const { gameId } = req.params;
+
+  db.run('DELETE FROM price_alerts WHERE game_id = ?', [gameId], function(err) {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json({ message: 'Price alert deleted successfully' });
+  });
+});
+
+// Get price alert notifications
+app.get('/api/price-alerts/notifications', (req, res) => {
+  db.all(`
+    SELECT pan.*, g.title, g.image_url, p.name as platform_name
+    FROM price_alert_notifications pan
+    LEFT JOIN games g ON pan.game_id = g.id
+    LEFT JOIN platforms p ON g.platform_id = p.id
+    ORDER BY pan.created_at DESC
+    LIMIT 50
+  `, (err, notifications) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(notifications || []);
+  });
+});
+
+// Mark notification as seen
+app.put('/api/price-alerts/notifications/:id/seen', (req, res) => {
+  const { id } = req.params;
+
+  db.run('UPDATE price_alert_notifications SET seen = 1 WHERE id = ?', [id], function(err) {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json({ message: 'Notification marked as seen' });
+  });
+});
+
+// Check prices for all alerted games
+app.post('/api/price-alerts/check', (req, res) => {
+  // Get all active price alerts with game info
+  db.all(`
+    SELECT pa.*, g.title, g.current_price, g.purchased
+    FROM price_alerts pa
+    LEFT JOIN games g ON pa.game_id = g.id
+    WHERE pa.is_active = 1 AND g.purchased = 0
+  `, (err, alerts) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+
+    if (alerts.length === 0) {
+      return res.json({ message: 'No active price alerts found', notifications: 0 });
+    }
+
+    let notificationsCreated = 0;
+    let processed = 0;
+
+    alerts.forEach(alert => {
+      // Generate mock price data for each alert
+      const mockPrices = [
+        {
+          platform: 'Steam',
+          price: Math.floor(Math.random() * 50) + 10,
+          url: 'https://store.steampowered.com'
+        },
+        {
+          platform: 'GOG',
+          price: Math.floor(Math.random() * 45) + 12,
+          url: 'https://www.gog.com'
+        },
+        {
+          platform: 'PlayStation Store',
+          price: Math.floor(Math.random() * 60) + 15,
+          url: 'https://store.playstation.com'
+        }
+      ];
+
+      mockPrices.forEach(priceData => {
+        const oldPrice = alert.current_price || alert.target_price;
+        const newPrice = priceData.price;
+        
+        // Check if price dropped
+        const shouldAlert = alert.target_price 
+          ? newPrice < alert.target_price 
+          : oldPrice && newPrice < oldPrice * 0.8; // 20% drop if no target price
+
+        if (shouldAlert) {
+          // Create notification
+          db.run(`
+            INSERT INTO price_alert_notifications (game_id, old_price, new_price, platform_name, url)
+            VALUES (?, ?, ?, ?, ?)
+          `, [alert.game_id, oldPrice, newPrice, priceData.platform, priceData.url], (err) => {
+            if (!err) {
+              notificationsCreated++;
+            }
+          });
+        }
+
+        // Update price history
+        db.run(`
+          INSERT INTO price_history (game_id, platform_name, price, url)
+          VALUES (?, ?, ?, ?)
+        `, [alert.game_id, priceData.platform, newPrice, priceData.url]);
+      });
+
+      processed++;
+      if (processed === alerts.length) {
+        setTimeout(() => {
+          res.json({ 
+            message: `Price check completed for ${alerts.length} games`,
+            notifications: notificationsCreated
+          });
+        }, 100);
+      }
+    });
+  });
+});
+
+// Get unseen notifications count
+app.get('/api/price-alerts/notifications/count', (req, res) => {
+  db.get('SELECT COUNT(*) as count FROM price_alert_notifications WHERE seen = 0', (err, result) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json({ count: result.count || 0 });
+  });
+});
+
+// Milestones API Routes
+
+// Get all milestones
+app.get('/api/milestones', (req, res) => {
+  db.all('SELECT * FROM milestones ORDER BY type, threshold', (err, milestones) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(milestones || []);
+  });
+});
+
+// Check and update milestones based on current stats
+app.post('/api/milestones/check', (req, res) => {
+  // Get current stats
+  db.get(`
+    SELECT 
+      COUNT(*) as totalGames,
+      SUM(CASE WHEN purchased = 1 THEN current_price ELSE 0 END) * 100 as totalValue,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      COUNT(DISTINCT platform_id) as platforms
+    FROM games
+  `, (err, stats) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+
+    const currentStats = {
+      games: stats.totalGames || 0,
+      value: Math.round(stats.totalValue || 0), // Convert to pence
+      completed: stats.completed || 0,
+      platforms: stats.platforms || 0
+    };
+
+    // Get all milestones
+    db.all('SELECT * FROM milestones', (err, milestones) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+
+      const newlyUnlocked = [];
+      const updatePromises = [];
+
+      milestones.forEach(milestone => {
+        const currentValue = currentStats[milestone.type];
+        const shouldBeUnlocked = currentValue >= milestone.threshold;
+        
+        if (shouldBeUnlocked && !milestone.unlocked) {
+          // Newly unlocked milestone
+          newlyUnlocked.push(milestone);
+          
+          updatePromises.push(new Promise((resolve, reject) => {
+            db.run(
+              'UPDATE milestones SET unlocked = 1, unlocked_at = CURRENT_TIMESTAMP WHERE id = ?',
+              [milestone.id],
+              (err) => {
+                if (err) reject(err);
+                else resolve();
+              }
+            );
+          }));
+        }
+      });
+
+      // Execute all updates
+      Promise.all(updatePromises)
+        .then(() => {
+          res.json({
+            newlyUnlocked: newlyUnlocked.map(m => ({
+              ...m,
+              unlocked: true,
+              unlocked_at: new Date().toISOString()
+            })),
+            currentStats
+          });
+        })
+        .catch(err => {
+          res.status(500).json({ error: err.message });
+        });
+    });
+  });
+});
+
+// Mark milestone as seen
+app.put('/api/milestones/:id/seen', (req, res) => {
+  const { id } = req.params;
+
+  db.run('UPDATE milestones SET seen = 1 WHERE id = ?', [id], function(err) {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json({ message: 'Milestone marked as seen' });
+  });
+});
+
+// Get unseen milestones count
+app.get('/api/milestones/unseen/count', (req, res) => {
+  db.get('SELECT COUNT(*) as count FROM milestones WHERE unlocked = 1 AND seen = 0', (err, result) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json({ count: result.count || 0 });
+  });
 });
 
 // Start server
