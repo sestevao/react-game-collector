@@ -13,16 +13,29 @@ const Statistics = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await getGameStatistics();
-        setStats(response.data);
-      } catch (error) {
-        console.error('Error fetching statistics:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchStats = async () => {
+    try {
+      const response = await getGameStatistics();
+      setStats({
+        totalGames: response.data?.totalGames || 0,
+        totalValue: response.data?.totalValue || 0,
+        platforms: Array.isArray(response.data?.platforms) ? response.data.platforms : [],
+        statuses: Array.isArray(response.data?.statuses) ? response.data.statuses : [],
+        topValued: Array.isArray(response.data?.topValued) ? response.data.topValued : []
+      });
+    } catch (error) {
+      console.error('Error fetching statistics:', error);
+      setStats({
+        totalGames: 0,
+        totalValue: 0,
+        platforms: [],
+        statuses: [],
+        topValued: []
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
     fetchStats();
   }, []);

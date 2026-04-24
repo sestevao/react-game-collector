@@ -60,9 +60,13 @@ const GameLibrary = () => {
     try {
       setLoading(true);
       const response = await getGames(filters);
-      setGames(response.data);
+      setGames({
+        data: Array.isArray(response.data?.data) ? response.data.data : [],
+        pagination: response.data?.pagination || {}
+      });
     } catch (error) {
       console.error('Error fetching games:', error);
+      setGames({ data: [], pagination: {} });
     } finally {
       setLoading(false);
     }
@@ -71,9 +75,10 @@ const GameLibrary = () => {
   const fetchPlatforms = async () => {
     try {
       const response = await getPlatforms();
-      setPlatforms(response.data);
+      setPlatforms(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching platforms:', error);
+      setPlatforms([]);
     }
   };
 

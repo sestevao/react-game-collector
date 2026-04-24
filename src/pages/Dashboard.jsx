@@ -20,10 +20,12 @@ const Dashboard = () => {
           getDashboardStats(),
           getRecentGames()
         ]);
-        setStats(statsResponse.data);
-        setRecentGames(recentResponse.data);
+        setStats(statsResponse.data || { totalGames: 0, totalValue: 0, completed: 0 });
+        setRecentGames(Array.isArray(recentResponse.data) ? recentResponse.data : []);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
+        setStats({ totalGames: 0, totalValue: 0, completed: 0 });
+        setRecentGames([]);
       } finally {
         setLoading(false);
       }
