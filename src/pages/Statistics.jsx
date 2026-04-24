@@ -85,25 +85,49 @@ const Statistics = () => {
           </div>
         </div>
 
-        {/* Platform Breakdown */}
+        {/* Platform Breakdown with Bar Chart */}
         <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Platform Breakdown</h3>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-6">Platform Breakdown</h3>
           {stats.platforms.length === 0 ? (
             <p className="text-gray-500 dark:text-gray-400">No games added yet.</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stats.platforms.map((platform, index) => (
-                <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex justify-between items-center">
-                  <div>
-                    <div className="font-bold text-gray-800 dark:text-gray-200">{platform.platform_name}</div>
-                    <div className="text-sm text-gray-500">{platform.count} Games</div>
+            <div className="space-y-4">
+              {stats.platforms.map((platform, index) => {
+                const maxCount = Math.max(...stats.platforms.map(p => p.count));
+                const percentage = (platform.count / maxCount) * 100;
+                const colors = [
+                  'bg-indigo-500',
+                  'bg-purple-500', 
+                  'bg-blue-500',
+                  'bg-green-500',
+                  'bg-yellow-500',
+                  'bg-red-500',
+                  'bg-pink-500',
+                  'bg-cyan-500'
+                ];
+                const color = colors[index % colors.length];
+                
+                return (
+                  <div key={index} className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${color}`}></div>
+                        <span className="font-medium text-gray-900 dark:text-white">{platform.platform_name}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-gray-900 dark:text-white">{platform.count} games</div>
+                        <div className="text-sm text-indigo-600 dark:text-indigo-400">{formatCurrency(platform.total_value)}</div>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full ${color} transition-all duration-1000 ease-out`}
+                        style={{ width: `${percentage}%` }}
+                      ></div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(platform.total_value)}</div>
-                    <div className="text-xs text-gray-400">Value</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -138,23 +162,90 @@ const Statistics = () => {
             )}
           </div>
 
-          {/* Status Breakdown */}
+          {/* Status Breakdown with Donut Chart */}
           <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg p-6">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Collection Status</h3>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-6">Collection Status</h3>
             {stats.statuses.length === 0 ? (
               <p className="text-gray-500 dark:text-gray-400">No games added yet.</p>
             ) : (
-              <div className="space-y-3">
-                {stats.statuses.map((status, index) => (
-                  <div key={index} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 flex justify-between items-center">
-                    <div className="capitalize text-gray-700 dark:text-gray-300">
-                      {(status.status || 'Uncategorized').replace('_', ' ')}
-                    </div>
-                    <div className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-1 rounded-full text-sm font-bold">
-                      {status.count}
+              <div className="flex flex-col lg:flex-row items-center gap-8">
+                {/* Donut Chart */}
+                <div className="relative w-48 h-48 flex-shrink-0">
+                  <svg className="w-48 h-48 transform -rotate-90" viewBox="0 0 100 100">
+                    {(() => {
+                      const total = stats.statuses.reduce((sum, status) => sum + status.count, 0);
+                      let cumulativePercentage = 0;
+                      const colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+                      
+                      return stats.statuses.map((status, index) => {
+                        const percentage = (status.count / total) * 100;
+                        const strokeDasharray = `${percentage} ${100 - percentage}`;
+                        const strokeDashoffset = -cumulativePercentage;
+                        cumulativePercentage += percentage;
+                        
+                        return (
+                          <circle
+                            key={index}
+                            cx="50"
+                            cy="50"
+                            r="15.915"
+                            fill="transparent"
+                            stroke={colors[index % colors.length]}
+                            strokeWidth="8"
+                            strokeDasharray={strokeDasharray}
+                            strokeDashoffset={strokeDashoffset}
+                            className="transition-all duration-1000 ease-out"
+                            style={{ 
+                              strokeLinecap: 'round',
+                              transformOrigin: '50% 50%'
+                            }}
+                          />
+                        );
+                      });
+                    })()}
+                    {/* Center circle */}
+                    <circle cx="50" cy="50" r="8" fill="currentColor" className="text-gray-100 dark:text-gray-700" />
+                  </svg>
+                  
+                  {/* Center text */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-2xl font-black text-gray-900 dark:text-white">
+                        {stats.totalGames}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                        Total
+                      </div>
                     </div>
                   </div>
-                ))}
+                </div>
+                
+                {/* Legend */}
+                <div className="flex-1 space-y-3">
+                  {stats.statuses.map((status, index) => {
+                    const colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+                    const total = stats.statuses.reduce((sum, s) => sum + s.count, 0);
+                    const percentage = ((status.count / total) * 100).toFixed(1);
+                    
+                    return (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-4 h-4 rounded-full"
+                            style={{ backgroundColor: colors[index % colors.length] }}
+                          ></div>
+                          <span className="capitalize text-gray-700 dark:text-gray-300 font-medium">
+                            {(status.status || 'Uncategorized').replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-gray-900 dark:text-white">{status.count}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">{percentage}%</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

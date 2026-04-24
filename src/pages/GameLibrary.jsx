@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getGames, getPlatforms, createGame, updateGame, deleteGame, bulkCreateGames } from '../utils/api';
+import { getGames, getPlatforms, createGame, updateGame, deleteGame, bulkCreateGames, importGames, checkDuplicate } from '../utils/api';
 import GameCard from '../components/GameCard';
 import GameSearchAutocomplete from '../components/GameSearchAutocomplete';
 
@@ -38,8 +38,18 @@ const GameLibrary = () => {
     released_at: '',
     genres: '',
     rating: '',
-    status: 'uncategorized'
+    status: 'uncategorized',
+    notes: ''
   });
+
+  // Import state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importData, setImportData] = useState([]);
+  const [importFile, setImportFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+
+  // Duplicate warning state
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
   useEffect(() => {
     fetchGames();
@@ -198,6 +208,12 @@ const GameLibrary = () => {
             >
               Add Game
             </button>
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="px-4 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition"
+            >
+              Import
+            </button>
           </div>
         </div>
 
@@ -246,6 +262,28 @@ const GameLibrary = () => {
                 </button>
               </div>
 
+              {/* Sort Controls */}
+              <select
+                value={`${filters.order_by}-${filters.direction}`}
+                onChange={(e) => {
+                  const [order_by, direction] = e.target.value.split('-');
+                  handleFilterChange('order_by', order_by);
+                  handleFilterChange('direction', direction);
+                }}
+                className="p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm cursor-pointer"
+              >
+                <option value="created_at-desc">Newest First</option>
+                <option value="created_at-asc">Oldest First</option>
+                <option value="title-asc">Title A-Z</option>
+                <option value="title-desc">Title Z-A</option>
+                <option value="current_price-desc">Highest Value</option>
+                <option value="current_price-asc">Lowest Value</option>
+                <option value="metascore-desc">Best Rated</option>
+                <option value="metascore-asc">Worst Rated</option>
+                <option value="released_at-desc">Latest Release</option>
+                <option value="released_at-asc">Earliest Release</option>
+              </select>
+
               <input
                 type="text"
                 placeholder="Search collection..."
@@ -281,7 +319,7 @@ const GameLibrary = () => {
 
         {/* Content */}
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 m-2 p-2 md:m-0 md:p-0">
             {[...Array(8)].map((_, i) => (
               <div key={i} className="animate-pulse">
                 <div className="bg-gray-200 dark:bg-gray-700 rounded-2xl h-64"></div>
@@ -332,6 +370,65 @@ const GameLibrary = () => {
           </div>
         )}
 
+        {/* Pagination */}
+        {games.pagination && games.pagination.total_pages > 1 && (
+          <div className="flex items-center justify-between mt-8 px-4">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Showing {((games.pagination.current_page - 1) * games.pagination.per_page) + 1} to{' '}
+              {Math.min(games.pagination.current_page * games.pagination.per_page, games.pagination.total)} of{' '}
+              {games.pagination.total} games
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleFilterChange('page', filters.page - 1)}
+                disabled={!games.pagination.has_prev}
+                className="px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                Previous
+              </button>
+              
+              {/* Page Numbers */}
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, games.pagination.total_pages) }, (_, i) => {
+                  let pageNum;
+                  if (games.pagination.total_pages <= 5) {
+                    pageNum = i + 1;
+                  } else if (games.pagination.current_page <= 3) {
+                    pageNum = i + 1;
+                  } else if (games.pagination.current_page >= games.pagination.total_pages - 2) {
+                    pageNum = games.pagination.total_pages - 4 + i;
+                  } else {
+                    pageNum = games.pagination.current_page - 2 + i;
+                  }
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handleFilterChange('page', pageNum)}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg transition ${
+                        pageNum === games.pagination.current_page
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <button
+                onClick={() => handleFilterChange('page', filters.page + 1)}
+                disabled={!games.pagination.has_next}
+                className="px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -368,13 +465,18 @@ const GameLibrary = () => {
                       required
                     />
                   ) : (
-                    <input
-                      type="text"
-                      value={formData.title}
-                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                      className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
-                      placeholder="Game Title"
-                      required
+                    <GameSearchAutocomplete
+                      placeholder="Search for a game or enter manually..."
+                      onSelect={(game) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          title: game.title,
+                          image_url: game.image_url || '',
+                          metascore: game.metascore || '',
+                          released_at: game.released_at || '',
+                          genres: game.genres || ''
+                        }));
+                      }}
                     />
                   )}
                 </div>

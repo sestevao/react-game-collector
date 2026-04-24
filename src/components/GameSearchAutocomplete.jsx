@@ -82,6 +82,14 @@ const GameSearchAutocomplete = ({ onSelect, placeholder = "Search for a game..."
     onSelect(game);
   };
 
+  const handleManualInput = (value) => {
+    setQuery(value);
+    // Allow manual typing to update the form
+    if (value !== query) {
+      onSelect({ title: value });
+    }
+  };
+
   const handleInputChange = (e) => {
     setQuery(e.target.value);
     if (e.target.value.length < 2) {

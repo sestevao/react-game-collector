@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getDashboardStats } from '../utils/api';
+import { getDashboardStats, getRecentGames } from '../utils/api';
 import useSettings from '../hooks/useSettings';
 
 const Dashboard = () => {
@@ -9,22 +9,27 @@ const Dashboard = () => {
     totalValue: 0,
     completed: 0
   });
+  const [recentGames, setRecentGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const { formatCurrency } = useSettings();
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       try {
-        const response = await getDashboardStats();
-        setStats(response.data);
+        const [statsResponse, recentResponse] = await Promise.all([
+          getDashboardStats(),
+          getRecentGames()
+        ]);
+        setStats(statsResponse.data);
+        setRecentGames(recentResponse.data);
       } catch (error) {
-        console.error('Error fetching dashboard stats:', error);
+        console.error('Error fetching dashboard data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStats();
+    fetchData();
   }, []);
 
   if (loading) {
@@ -134,6 +139,58 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Recently Added Games */}
+        {recentGames.length > 0 && (
+          <div className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-black text-gray-900 dark:text-white">Recently Added</h2>
+              <Link 
+                to="/library" 
+                className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium text-sm flex items-center gap-1"
+              >
+                View All
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+              {recentGames.map(game => (
+                <Link
+                  key={game.id}
+                  to={`/game/${game.id}`}
+                  className="group bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 border border-gray-100 dark:border-gray-700 overflow-hidden"
+                >
+                  <div className="aspect-square bg-gray-200 dark:bg-gray-900 overflow-hidden">
+                    <img
+                      src={game.image_url || 'https://placehold.co/300x300?text=No+Image'}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      alt={game.title}
+                    />
+                  </div>
+                  <div className="p-3">
+                    <h3 className="font-bold text-gray-900 dark:text-white text-sm line-clamp-2 mb-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                      {game.title}
+                    </h3>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {game.platform?.name}
+                      </span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {new Date(game.created_at).toLocaleDateString('en-GB', { 
+                          month: 'short', 
+                          day: 'numeric' 
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

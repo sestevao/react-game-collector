@@ -19,6 +19,7 @@ export const bulkCreateGames = (games) => api.post('/games/bulk', { games });
 // Statistics
 export const getGameStatistics = () => api.get('/games/statistics');
 export const getDashboardStats = () => api.get('/dashboard/stats');
+export const getRecentGames = () => api.get('/dashboard/recent');
 
 // Game metadata and prices
 export const searchGameMetadata = (query) => api.get('/games/search-metadata', { params: { query } });
@@ -27,6 +28,9 @@ export const getGamePrices = (id) => api.get(`/games/${id}/prices`);
 
 // Bulk operations
 export const bulkDeleteGames = (ids) => api.delete('/games/bulk', { data: { ids } });
-export const importGames = (games) => api.post('/games/import', { games });
+export const importGames = (games, skipDuplicates = true) => api.post('/games/import', { games, skipDuplicates });
+
+// Duplicate checking
+export const checkDuplicate = (title, platform_id) => api.get('/games/check-duplicate', { params: { title, platform_id } });
 
 export default api;

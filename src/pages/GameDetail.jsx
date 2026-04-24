@@ -348,6 +348,16 @@ const GameDetail = () => {
               </div>
             </div>
 
+            {/* Notes */}
+            {game.notes && (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Notes</h2>
+                <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                  {game.notes}
+                </div>
+              </div>
+            )}
+
             {/* Quick Stats */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Quick Stats</h2>
@@ -424,6 +434,19 @@ const GameDetail = () => {
                     onChange={(e) => setEditData(prev => ({ ...prev, current_price: e.target.value }))}
                     className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-lg"
                     placeholder="29.99"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    value={editData.notes}
+                    onChange={(e) => setEditData(prev => ({ ...prev, notes: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-lg"
+                    rows="3"
+                    placeholder="Add your notes about this game..."
                   />
                 </div>
                 
