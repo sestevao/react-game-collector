@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getGame, getGamePrices, updateGame, deleteGame } from '../utils/api';
+import { getGame, getGamePrices, refreshGameMetadata, refreshGamePrices, updateGame, deleteGame } from '../utils/api';
 import useSettings from '../hooks/useSettings';
 
 const GameDetail = () => {
@@ -12,6 +12,7 @@ const GameDetail = () => {
   const [prices, setPrices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pricesLoading, setPricesLoading] = useState(false);
+  const [metadataLoading, setMetadataLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editData, setEditData] = useState({});
 
@@ -40,10 +41,22 @@ const GameDetail = () => {
   const fetchPrices = async () => {
     try {
       setPricesLoading(true);
-      const response = await getGamePrices(id);
+      const response = await refreshGamePrices(id);
       setPrices(response.data.prices || []);
+      setGame(prev => prev ? ({
+        ...prev,
+        current_price: response.data.current_price,
+        price_source: response.data.price_source
+      }) : prev);
+      setEditData(prev => ({ ...prev, current_price: response.data.current_price || '' }));
     } catch (error) {
       console.error('Error fetching prices:', error);
+      try {
+        const fallback = await getGamePrices(id);
+        setPrices(fallback.data.prices || []);
+      } catch (fallbackError) {
+        console.error('Error fetching prices (fallback):', fallbackError);
+      }
     } finally {
       setPricesLoading(false);
     }
@@ -71,6 +84,27 @@ const GameDetail = () => {
       } catch (error) {
         console.error('Error deleting game:', error);
       }
+    }
+  };
+
+  const handleRefreshMetadata = async () => {
+    try {
+      setMetadataLoading(true);
+      const response = await refreshGameMetadata(id);
+      const metadata = response.data?.metadata;
+      if (metadata) {
+        setGame(prev => prev ? ({
+          ...prev,
+          image_url: metadata.image_url || prev.image_url,
+          released_at: metadata.released_at || prev.released_at,
+          genres: metadata.genres || prev.genres,
+          metascore: metadata.metascore ?? prev.metascore
+        }) : prev);
+      }
+    } catch (error) {
+      console.error('Error refreshing metadata:', error);
+    } finally {
+      setMetadataLoading(false);
     }
   };
 
@@ -141,6 +175,13 @@ const GameDetail = () => {
           </Link>
           
           <div className="flex gap-3">
+            <button
+              onClick={handleRefreshMetadata}
+              disabled={metadataLoading}
+              className="px-4 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-black transition disabled:opacity-50"
+            >
+              {metadataLoading ? 'Refreshing...' : 'Refresh Metadata'}
+            </button>
             <button
               onClick={() => setShowEditModal(true)}
               className="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition"
@@ -260,7 +301,7 @@ const GameDetail = () => {
                   disabled={pricesLoading}
                   className="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
                 >
-                  {pricesLoading ? 'Checking...' : 'Check Prices'}
+                  {pricesLoading ? 'Refreshing...' : 'Refresh Prices'}
                 </button>
               </div>
               

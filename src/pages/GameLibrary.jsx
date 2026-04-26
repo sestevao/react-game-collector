@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
-import { getGames, getPlatforms, createGame, updateGame, deleteGame, bulkCreateGames, importGames } from '../utils/api';
+import { useState, useEffect, useRef } from 'react';
+import { getGames, getPlatforms, createGame, updateGame, deleteGame, bulkCreateGames, importGames, searchGameMetadata } from '../utils/api';
 import GameCard from '../components/GameCard';
 import GameSearchAutocomplete from '../components/GameSearchAutocomplete';
 
 const GameLibrary = () => {
-  const [games, setGames] = useState({ data: [], pagination: {} });
+  const [games, setGames] = useState({ data: [], pagination: {}, summary: {} });
   const [platforms, setPlatforms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -54,6 +54,10 @@ const GameLibrary = () => {
   // Duplicate warning state
   const [duplicateWarning, setDuplicateWarning] = useState(null);
 
+  const scanFileInputRef = useRef(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState('');
+
   useEffect(() => {
     fetchGames();
     fetchPlatforms();
@@ -65,7 +69,8 @@ const GameLibrary = () => {
       const response = await getGames(filters);
       setGames({
         data: Array.isArray(response.data?.data) ? response.data.data : [],
-        pagination: response.data?.pagination || {}
+        pagination: response.data?.pagination || {},
+        summary: response.data?.summary || {}
       });
     } catch (error) {
       console.error('Error fetching games:', error);
@@ -91,6 +96,68 @@ const GameLibrary = () => {
       [key]: value,
       page: 1 // Reset to first page when filtering
     }));
+  };
+
+  const pickScannedTitle = (rawText) => {
+    const lines = String(rawText || '')
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    const scored = lines
+      .map(line => {
+        const letters = (line.match(/[A-Za-z]/g) || []).length;
+        const digits = (line.match(/[0-9]/g) || []).length;
+        const score = letters * 2 - digits;
+        return { line, score, letters };
+      })
+      .filter(x => x.letters >= 4 && x.line.length <= 80)
+      .sort((a, b) => b.score - a.score);
+
+    return scored[0]?.line || lines[0] || '';
+  };
+
+  const handleScanFileChange = async (file) => {
+    if (!file) return;
+
+    try {
+      setScanError('');
+      setScanLoading(true);
+
+      const Tesseract = await import('tesseract.js');
+      const result = await Tesseract.recognize(file, 'eng');
+      const title = pickScannedTitle(result?.data?.text);
+
+      if (!title) {
+        setScanError('Could not detect a title from that image.');
+        return;
+      }
+
+      setFormData(prev => ({ ...prev, title }));
+
+      try {
+        const metadataResponse = await searchGameMetadata(title);
+        const match = metadataResponse.data?.games?.[0];
+        if (match) {
+          setFormData(prev => ({
+            ...prev,
+            title: match.title || prev.title,
+            image_url: match.image_url || prev.image_url,
+            metascore: match.metascore || prev.metascore,
+            released_at: match.released_at || prev.released_at,
+            genres: match.genres || prev.genres
+          }));
+        }
+      } catch (metadataError) {
+        console.error('Error searching metadata after scan:', metadataError);
+      }
+    } catch (error) {
+      console.error('Error scanning image:', error);
+      setScanError('Scan failed. Try a clearer photo of the game title.');
+    } finally {
+      setScanLoading(false);
+      if (scanFileInputRef.current) scanFileInputRef.current.value = '';
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -171,6 +238,9 @@ const GameLibrary = () => {
       rating: '',
       status: 'uncategorized'
     });
+    setScanError('');
+    setScanLoading(false);
+    if (scanFileInputRef.current) scanFileInputRef.current.value = '';
   };
 
   const resetImport = () => {
@@ -472,7 +542,7 @@ const GameLibrary = () => {
                   {filters.purchased === 'true' ? 'Collection Value' : 'Wishlist Value'}
                 </span>
                 <span className="text-3xl text-indigo-600 dark:text-indigo-400 font-black tracking-tight">
-                  {formatCurrency(games.data?.reduce((sum, game) => sum + (game.current_price || 0), 0) || 0)}
+                  {formatCurrency((games.summary?.total_value ?? games.data?.reduce((sum, game) => sum + (game.current_price || 0), 0)) || 0)}
                 </span>
               </div>
             </div>
@@ -698,9 +768,38 @@ const GameLibrary = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {isBulk ? 'Titles (One per line)' : 'Title'}
-                  </label>
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {isBulk ? 'Titles (One per line)' : 'Title'}
+                    </label>
+
+                    {!isBulk && (
+                      <>
+                        <input
+                          ref={scanFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleScanFileChange(e.target.files?.[0] || null)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => scanFileInputRef.current?.click()}
+                          disabled={scanLoading}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition disabled:opacity-50"
+                        >
+                          {scanLoading ? 'Scanning...' : 'Scan from Image'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {!isBulk && scanError && (
+                    <div className="mb-2 text-sm text-red-600 dark:text-red-400">
+                      {scanError}
+                    </div>
+                  )}
+
                   {isBulk ? (
                     <textarea
                       value={formData.title}

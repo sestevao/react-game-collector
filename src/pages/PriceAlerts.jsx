@@ -17,6 +17,7 @@ const PriceAlerts = () => {
   const [alerts, setAlerts] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [wishlistGames, setWishlistGames] = useState([]);
+  const [newAlertTargetPrices, setNewAlertTargetPrices] = useState({});
   const [loading, setLoading] = useState(true);
   const [checkingPrices, setCheckingPrices] = useState(false);
   const [activeTab, setActiveTab] = useState('alerts');
@@ -94,9 +95,19 @@ const PriceAlerts = () => {
   };
 
   const handleAddAlert = async (gameId) => {
+    const rawTargetPrice = newAlertTargetPrices[gameId];
+    const trimmed = String(rawTargetPrice ?? '').trim();
+    const parsed = trimmed ? Number.parseFloat(trimmed) : null;
+    const targetPrice = Number.isFinite(parsed) ? parsed : null;
+
     try {
-      await createPriceAlert(gameId);
-      fetchData(); // Refresh data
+      await createPriceAlert(gameId, targetPrice);
+      setNewAlertTargetPrices(prev => {
+        const next = { ...prev };
+        delete next[gameId];
+        return next;
+      });
+      fetchData();
     } catch (error) {
       console.error('Error creating price alert:', error);
       if (error.response?.data?.error) {
@@ -111,6 +122,7 @@ const PriceAlerts = () => {
   };
 
   const unseenNotifications = notifications.filter(notif => !notif.seen);
+  const wishlistGamesWithoutAlerts = getWishlistGamesWithoutAlerts();
 
   if (loading) {
     return (
@@ -186,7 +198,7 @@ const PriceAlerts = () => {
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
             }`}
           >
-            Add Alerts
+            Add Alerts ({wishlistGamesWithoutAlerts.length})
           </button>
         </div>
 
@@ -351,7 +363,7 @@ const PriceAlerts = () => {
         {/* Add Alerts Tab */}
         {activeTab === 'add' && (
           <div className="space-y-4">
-            {getWishlistGamesWithoutAlerts().length === 0 ? (
+            {wishlistGamesWithoutAlerts.length === 0 ? (
               <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
@@ -372,7 +384,7 @@ const PriceAlerts = () => {
                   <p className="text-gray-600 dark:text-gray-400">Click "Watch Price" to get notified when these games go on sale</p>
                 </div>
                 
-                {getWishlistGamesWithoutAlerts().map(game => (
+                {wishlistGamesWithoutAlerts.map(game => (
                   <div key={game.id} className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                     <div className="flex items-center gap-4">
                       <div className="w-16 h-16 bg-gray-200 dark:bg-gray-900 rounded-xl overflow-hidden flex-shrink-0">
@@ -400,6 +412,24 @@ const PriceAlerts = () => {
                         <div className="text-lg font-bold text-gray-900 dark:text-white">
                           {game.current_price ? formatCurrency(game.current_price) : '--'}
                         </div>
+                      </div>
+
+                      <div className="text-right mr-4">
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Target Price</div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={newAlertTargetPrices[game.id] ?? ''}
+                          onChange={(e) =>
+                            setNewAlertTargetPrices(prev => ({
+                              ...prev,
+                              [game.id]: e.target.value
+                            }))
+                          }
+                          className="w-24 text-lg font-bold text-center border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1"
+                          placeholder="Any"
+                        />
                       </div>
 
                       <button

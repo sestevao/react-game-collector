@@ -361,23 +361,61 @@ app.get('/api/games', (req, res) => {
       const total = countResult.total;
       const totalPages = Math.ceil(total / limit);
 
-      res.json({
-        data: rows.map(row => ({
-          ...row,
-          platform: {
-            id: row.platform_id,
-            name: row.platform_name,
-            slug: row.platform_slug
-          }
-        })),
-        pagination: {
-          current_page: parseInt(page),
-          per_page: limit,
-          total,
-          total_pages: totalPages,
-          has_next: parseInt(page) < totalPages,
-          has_prev: parseInt(page) > 1
+      let valueQuery = `
+        SELECT COALESCE(SUM(COALESCE(g.current_price, 0)), 0) as total_value
+        FROM games g
+        WHERE 1=1
+      `;
+      const valueParams = [];
+
+      if (search) {
+        valueQuery += ' AND g.title LIKE ?';
+        valueParams.push(`%${search}%`);
+      }
+
+      if (platform_id) {
+        valueQuery += ' AND g.platform_id = ?';
+        valueParams.push(platform_id);
+      }
+
+      if (status !== 'all') {
+        valueQuery += ' AND g.status = ?';
+        valueParams.push(status);
+      }
+
+      if (purchased !== 'all') {
+        const isPurchased = purchased === 'true' ? 1 : 0;
+        valueQuery += ' AND g.purchased = ?';
+        valueParams.push(isPurchased);
+      }
+
+      db.get(valueQuery, valueParams, (err, valueResult) => {
+        if (err) {
+          res.status(500).json({ error: err.message });
+          return;
         }
+
+        res.json({
+          data: rows.map(row => ({
+            ...row,
+            platform: {
+              id: row.platform_id,
+              name: row.platform_name,
+              slug: row.platform_slug
+            }
+          })),
+          pagination: {
+            current_page: parseInt(page),
+            per_page: limit,
+            total,
+            total_pages: totalPages,
+            has_next: parseInt(page) < totalPages,
+            has_prev: parseInt(page) > 1
+          },
+          summary: {
+            total_value: valueResult?.total_value || 0
+          }
+        });
       });
     });
   });
@@ -617,6 +655,34 @@ app.delete('/api/games/:id', (req, res) => {
   });
 });
 
+const getRawgSearchUrl = (query, pageSize = 10) => {
+  const base = `https://api.rawg.io/api/games?search=${encodeURIComponent(query)}&page_size=${pageSize}`;
+  const key = process.env.RAWG_API_KEY;
+  return key ? `${base}&key=${encodeURIComponent(key)}` : base;
+};
+
+const sanitizeTitleForSearch = (title) => {
+  if (!title) return '';
+
+  return String(title)
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\s+-\s+.+$/g, ' ')
+    .replace(/[:|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const mapRawgGameToMetadata = (game) => ({
+  id: game.id,
+  title: game.name,
+  image_url: game.background_image,
+  released_at: game.released,
+  genres: game.genres?.map(g => g.name).join(', '),
+  metascore: game.metacritic,
+  platforms: game.platforms?.map(p => p.platform.name)
+});
+
 // Search game metadata from RAWG API
 app.get('/api/games/search-metadata', async (req, res) => {
   const { query } = req.query;
@@ -626,24 +692,78 @@ app.get('/api/games/search-metadata', async (req, res) => {
   }
 
   try {
-    const response = await fetch(`https://api.rawg.io/api/games?search=${encodeURIComponent(query)}&page_size=10`);
+    const response = await fetch(getRawgSearchUrl(query, 10));
     const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(502).json({ error: data?.detail || 'Failed to fetch game metadata' });
+    }
     
-    const games = data.results?.map(game => ({
-      id: game.id,
-      title: game.name,
-      image_url: game.background_image,
-      released_at: game.released,
-      genres: game.genres?.map(g => g.name).join(', '),
-      metascore: game.metacritic,
-      platforms: game.platforms?.map(p => p.platform.name)
-    })) || [];
+    const games = data.results?.map(mapRawgGameToMetadata) || [];
 
     res.json({ games });
   } catch (error) {
     console.error('Error fetching game metadata:', error);
     res.status(500).json({ error: 'Failed to fetch game metadata' });
   }
+});
+
+// Refresh metadata for a stored game
+app.post('/api/games/:id/refresh-metadata', (req, res) => {
+  const { id } = req.params;
+
+  db.get('SELECT id, title FROM games WHERE id = ?', [id], async (err, game) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+
+    if (!game) {
+      res.status(404).json({ error: 'Game not found' });
+      return;
+    }
+
+    try {
+      const query = sanitizeTitleForSearch(game.title);
+      const response = await fetch(getRawgSearchUrl(query || game.title, 5));
+      const data = await response.json();
+
+      if (!response.ok) {
+        res.status(502).json({ error: data?.detail || 'Failed to refresh game metadata' });
+        return;
+      }
+
+      const match = data.results?.[0];
+      if (!match) {
+        res.json({ metadata: null, message: 'No metadata match found' });
+        return;
+      }
+
+      const metadata = mapRawgGameToMetadata(match);
+
+      db.run(`
+        UPDATE games SET
+          image_url = ?, released_at = ?, genres = ?, metascore = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [
+        metadata.image_url,
+        metadata.released_at,
+        metadata.genres,
+        metadata.metascore,
+        id
+      ], function(updateErr) {
+        if (updateErr) {
+          res.status(500).json({ error: updateErr.message });
+          return;
+        }
+
+        res.json({ metadata });
+      });
+    } catch (error) {
+      console.error('Error refreshing game metadata:', error);
+      res.status(500).json({ error: 'Failed to refresh game metadata' });
+    }
+  });
 });
 
 // Get game by ID with price history
@@ -691,50 +811,90 @@ app.get('/api/games/:id', (req, res) => {
   });
 });
 
-// Get current prices for a game across platforms
-app.get('/api/games/:id/prices', (req, res) => {
-  const { id } = req.params;
+const generateMockPrices = () => [
+  {
+    platform: 'Steam',
+    price: Math.floor(Math.random() * 50) + 10,
+    url: 'https://store.steampowered.com',
+    last_checked: new Date().toISOString()
+  },
+  {
+    platform: 'GOG',
+    price: Math.floor(Math.random() * 45) + 12,
+    url: 'https://www.gog.com',
+    last_checked: new Date().toISOString()
+  },
+  {
+    platform: 'PlayStation Store',
+    price: Math.floor(Math.random() * 60) + 15,
+    url: 'https://store.playstation.com',
+    last_checked: new Date().toISOString()
+  },
+  {
+    platform: 'eBay',
+    price: Math.floor(Math.random() * 30) + 8,
+    url: 'https://www.ebay.com',
+    last_checked: new Date().toISOString()
+  }
+];
 
-  // Mock price data - in real implementation, this would call actual APIs
-  const mockPrices = [
-    {
-      platform: 'Steam',
-      price: Math.floor(Math.random() * 50) + 10,
-      url: 'https://store.steampowered.com',
-      last_checked: new Date().toISOString()
-    },
-    {
-      platform: 'GOG',
-      price: Math.floor(Math.random() * 45) + 12,
-      url: 'https://www.gog.com',
-      last_checked: new Date().toISOString()
-    },
-    {
-      platform: 'PlayStation Store',
-      price: Math.floor(Math.random() * 60) + 15,
-      url: 'https://store.playstation.com',
-      last_checked: new Date().toISOString()
-    },
-    {
-      platform: 'eBay',
-      price: Math.floor(Math.random() * 30) + 8,
-      url: 'https://www.ebay.com',
-      last_checked: new Date().toISOString()
-    }
-  ];
-
-  // Store price history
+const storePriceHistory = (gameId, prices, callback) => {
   const stmt = db.prepare(`
     INSERT INTO price_history (game_id, platform_name, price, url)
     VALUES (?, ?, ?, ?)
   `);
 
-  mockPrices.forEach(priceData => {
-    stmt.run([id, priceData.platform, priceData.price, priceData.url]);
+  prices.forEach(priceData => {
+    stmt.run([gameId, priceData.platform, priceData.price, priceData.url]);
   });
 
-  stmt.finalize(() => {
+  stmt.finalize(callback);
+};
+
+// Get current prices for a game across platforms
+app.get('/api/games/:id/prices', (req, res) => {
+  const { id } = req.params;
+
+  const mockPrices = generateMockPrices();
+
+  storePriceHistory(id, mockPrices, () => {
     res.json({ prices: mockPrices });
+  });
+});
+
+// Refresh prices for a stored game (also updates current_price and price_source)
+app.post('/api/games/:id/refresh-prices', (req, res) => {
+  const { id } = req.params;
+
+  db.get('SELECT id FROM games WHERE id = ?', [id], (err, game) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+
+    if (!game) {
+      res.status(404).json({ error: 'Game not found' });
+      return;
+    }
+
+    const prices = generateMockPrices();
+
+    storePriceHistory(id, prices, () => {
+      const lowest = prices.reduce((best, p) => (!best || p.price < best.price ? p : best), null);
+
+      db.run(`
+        UPDATE games SET
+          current_price = ?, price_source = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [lowest?.price ?? null, lowest?.platform ?? null, id], function(updateErr) {
+        if (updateErr) {
+          res.status(500).json({ error: updateErr.message });
+          return;
+        }
+
+        res.json({ prices, current_price: lowest?.price ?? null, price_source: lowest?.platform ?? null });
+      });
+    });
   });
 });
 

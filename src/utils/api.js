@@ -25,6 +25,8 @@ export const getRecentGames = () => api.get('/dashboard/recent');
 export const searchGameMetadata = (query) => api.get('/games/search-metadata', { params: { query } });
 export const getGame = (id) => api.get(`/games/${id}`);
 export const getGamePrices = (id) => api.get(`/games/${id}/prices`);
+export const refreshGameMetadata = (id) => api.post(`/games/${id}/refresh-metadata`);
+export const refreshGamePrices = (id) => api.post(`/games/${id}/refresh-prices`);
 
 // Bulk operations
 export const bulkDeleteGames = (ids) => api.delete('/games/bulk', { data: { ids } });
