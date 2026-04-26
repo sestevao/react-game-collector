@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import sqlite3 from 'sqlite3';
+import { existsSync } from 'fs';
+import { copyFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -12,16 +14,44 @@ const PORT = process.env.PORT || 3001;
 const BODY_LIMIT = process.env.BODY_LIMIT || '10mb';
 
 // Middleware
+const corsAllowlist = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-app.vercel.app'] // Replace with your actual Vercel domain
-    : ['http://localhost:5173', 'http://localhost:3000']
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+
+    if (process.env.NODE_ENV !== 'production') {
+      if (origin === 'http://localhost:5173' || origin === 'http://localhost:3000') {
+        return callback(null, true);
+      }
+    }
+
+    if (corsAllowlist.includes(origin)) return callback(null, true);
+
+    if (origin.endsWith('.vercel.app')) return callback(null, true);
+
+    return callback(new Error('Not allowed by CORS'));
+  }
 }));
 app.use(express.json({ limit: BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 
 // Database setup
-const db = new sqlite3.Database(join(__dirname, 'database.sqlite'));
+const bundledDbPath = join(__dirname, 'database.sqlite');
+const dbPath = process.env.VERCEL ? join('/tmp', 'database.sqlite') : bundledDbPath;
+
+if (process.env.VERCEL && !existsSync(dbPath) && existsSync(bundledDbPath)) {
+  try {
+    await copyFile(bundledDbPath, dbPath);
+  } catch (err) {
+    console.error('Error copying bundled database to /tmp:', err);
+  }
+}
+
+const db = new sqlite3.Database(dbPath);
 
 // Initialize database tables
 db.serialize(() => {
@@ -1197,7 +1227,11 @@ app.get('/api/milestones/unseen/count', (req, res) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Game Collector API running on http://localhost:${PORT}`);
-});
+// Start server (local dev only)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Game Collector API running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
