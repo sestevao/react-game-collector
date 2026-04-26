@@ -194,7 +194,7 @@ const Layout = ({ children }) => {
                       {item.icon}
                     </div>
                     <span className="truncate">{item.title}</span>
-                    {item.badge && item.badge > 0 && (
+                    {item.badge > 0 && (
                       <span className="ml-auto bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                         {item.badge > 99 ? '99+' : item.badge}
                       </span>
