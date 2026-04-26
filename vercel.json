@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "server/index.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["server/database.sqlite"]
+      }
     },
     {
       "src": "package.json",
@@ -16,7 +19,7 @@
   "routes": [
     {
       "src": "^/api/(.*)$",
-      "dest": "server/index.js"
+      "dest": "/server/index.js"
     },
     {
       "handle": "filesystem"
