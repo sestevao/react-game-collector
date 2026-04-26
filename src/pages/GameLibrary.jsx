@@ -200,10 +200,18 @@ const GameLibrary = () => {
           purchased: formData.purchased
         }));
         await bulkCreateGames(games);
-      } else if (editingGame) {
-        await updateGame(editingGame.id, formData);
       } else {
-        await createGame(formData);
+        const payload = { ...formData };
+        if (!payload.image_base64) {
+          delete payload.image_base64;
+          delete payload.image_mime;
+        }
+
+        if (editingGame) {
+          await updateGame(editingGame.id, payload);
+        } else {
+          await createGame(payload);
+        }
       }
       
       setShowModal(false);

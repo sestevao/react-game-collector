@@ -277,6 +277,42 @@ const parseBase64Image = (value) => {
   return { mime: null, base64: str };
 };
 
+const IMAGE_FETCH_TIMEOUT_MS = Number.parseInt(process.env.IMAGE_FETCH_TIMEOUT_MS || '10000', 10);
+
+const fetchImageToBuffer = async (url) => {
+  if (!url) return null;
+
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(parsed.toString(), { signal: controller.signal });
+    if (!response.ok) return null;
+
+    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim();
+    if (contentType && !contentType.startsWith('image/')) return null;
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buf = Buffer.from(arrayBuffer);
+    if (!buf.length || buf.length > MAX_IMAGE_BYTES) return null;
+
+    return { bytes: buf, mime: contentType || null };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 // API Routes
 
 // Get all platforms
@@ -769,12 +805,22 @@ app.post('/api/games/:id/refresh-metadata', (req, res) => {
 
       const metadata = mapRawgGameToMetadata(match);
 
+      const downloaded = await fetchImageToBuffer(metadata.image_url);
+
       db.run(`
         UPDATE games SET
-          image_url = ?, released_at = ?, genres = ?, metascore = ?, updated_at = CURRENT_TIMESTAMP
+          image_url = ?,
+          image_data = COALESCE(?, image_data),
+          image_mime = COALESCE(?, image_mime),
+          released_at = ?,
+          genres = ?,
+          metascore = ?,
+          updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `, [
         metadata.image_url,
+        downloaded?.bytes || null,
+        downloaded?.mime || null,
         metadata.released_at,
         metadata.genres,
         metadata.metascore,
@@ -791,6 +837,37 @@ app.post('/api/games/:id/refresh-metadata', (req, res) => {
       console.error('Error refreshing game metadata:', error);
       res.status(500).json({ error: 'Failed to refresh game metadata' });
     }
+  });
+});
+
+// Serve stored cover image (if present)
+app.get('/api/games/:id/image', (req, res) => {
+  const { id } = req.params;
+
+  db.get('SELECT image_data, image_mime, image_url FROM games WHERE id = ?', [id], (err, game) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+
+    if (!game) {
+      res.status(404).end();
+      return;
+    }
+
+    if (game.image_data && Buffer.isBuffer(game.image_data) && game.image_data.length > 0) {
+      if (game.image_mime) res.setHeader('Content-Type', game.image_mime);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.end(game.image_data);
+      return;
+    }
+
+    if (game.image_url) {
+      res.redirect(302, game.image_url);
+      return;
+    }
+
+    res.status(404).end();
   });
 });
 
