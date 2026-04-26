@@ -34,6 +34,8 @@ const GameLibrary = () => {
     purchase_location: '',
     purchased: true,
     image_url: '',
+    image_base64: '',
+    image_mime: '',
     metascore: '',
     released_at: '',
     genres: '',
@@ -124,6 +126,22 @@ const GameLibrary = () => {
     return scored[0]?.line || lines[0] || '';
   };
 
+  const handleCoverFileChange = (file) => {
+    if (!file) {
+      setFormData(prev => ({ ...prev, image_base64: '', image_mime: '' }));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const match = result.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) return;
+      setFormData(prev => ({ ...prev, image_base64: match[2], image_mime: match[1] }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleScanFileChange = async (file) => {
     if (!file) return;
 
@@ -209,6 +227,8 @@ const GameLibrary = () => {
       purchase_location: game.purchase_location || '',
       purchased: game.purchased,
       image_url: game.image_url || '',
+      image_base64: '',
+      image_mime: '',
       metascore: game.metascore || '',
       released_at: game.released_at || '',
       genres: game.genres || '',
@@ -239,6 +259,8 @@ const GameLibrary = () => {
       purchase_location: '',
       purchased: true,
       image_url: '',
+      image_base64: '',
+      image_mime: '',
       metascore: '',
       released_at: '',
       genres: '',
@@ -913,6 +935,18 @@ const GameLibrary = () => {
                         onChange={(e) => setFormData(prev => ({ ...prev, image_url: e.target.value }))}
                         className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
                         placeholder="https://..."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Upload Cover Image
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleCoverFileChange(e.target.files?.[0] || null)}
+                        className="w-full p-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
                       />
                     </div>
 

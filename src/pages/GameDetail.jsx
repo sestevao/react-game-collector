@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getGame, getGamePrices, refreshGameMetadata, refreshGamePrices, updateGame, deleteGame } from '../utils/api';
+import { getGame, getGamePrices, refreshGameMetadata, refreshGamePrices, updateGame, deleteGame, getGameImageSrc } from '../utils/api';
 import useSettings from '../hooks/useSettings';
 
 const GameDetail = () => {
@@ -207,7 +207,7 @@ const GameDetail = () => {
               <div className="flex flex-col md:flex-row gap-6">
                 <div className="w-full md:w-48 h-64 bg-gray-200 dark:bg-gray-900 rounded-xl overflow-hidden flex-shrink-0">
                   <img
-                    src={game.image_url || 'https://placehold.co/600x400?text=No+Image'}
+                    src={getGameImageSrc(game)}
                     className="w-full h-full object-cover"
                     alt={game.title}
                   />

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import useSettings from '../hooks/useSettings';
+import { getGameImageSrc } from '../utils/api';
 
 const GameCard = ({ game, onEdit, onDelete, viewMode = 'gallery' }) => {
   const { formatCurrency } = useSettings();
@@ -24,7 +25,7 @@ const GameCard = ({ game, onEdit, onDelete, viewMode = 'gallery' }) => {
       <div className="bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-all duration-200 sm:rounded-xl flex overflow-hidden group border border-gray-100 dark:border-gray-700 h-28">
         <div className="w-24 sm:w-32 h-full flex-shrink-0 relative bg-gray-200 dark:bg-gray-900 overflow-hidden">
           <img
-            src={game.image_url || 'https://placehold.co/600x400?text=No+Image'}
+            src={getGameImageSrc(game)}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             alt="Game Cover"
           />
@@ -100,7 +101,7 @@ const GameCard = ({ game, onEdit, onDelete, viewMode = 'gallery' }) => {
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative group border border-gray-100 dark:border-gray-700 flex flex-col overflow-hidden">
       <div className="aspect-[16/9] overflow-hidden relative bg-gray-100 dark:bg-gray-900">
         <img
-          src={game.image_url || 'https://placehold.co/600x400?text=No+Image'}
+          src={getGameImageSrc(game)}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           alt="Game Cover"
         />

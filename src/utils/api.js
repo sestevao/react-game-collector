@@ -2,6 +2,11 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+export const getGameImageUrl = (id) => `${String(API_BASE_URL).replace(/\/$/, '')}/games/${id}/image`;
+export const getGameImageSrc = (game, fallback = 'https://placehold.co/600x400?text=No+Image') => (
+  game?.has_image ? getGameImageUrl(game.id) : (game?.image_url || fallback)
+);
+
 const api = axios.create({
   baseURL: API_BASE_URL,
 });

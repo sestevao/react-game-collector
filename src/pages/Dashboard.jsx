@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getDashboardStats, getRecentGames, getMilestones } from '../utils/api';
+import { getDashboardStats, getRecentGames, getMilestones, getGameImageSrc } from '../utils/api';
 import useSettings from '../hooks/useSettings';
 
 const Dashboard = () => {
@@ -251,7 +251,7 @@ const Dashboard = () => {
                 >
                   <div className="aspect-square bg-gray-200 dark:bg-gray-900 overflow-hidden">
                     <img
-                      src={game.image_url || 'https://placehold.co/300x300?text=No+Image'}
+                      src={getGameImageSrc(game, 'https://placehold.co/300x300?text=No+Image')}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       alt={game.title}
                     />

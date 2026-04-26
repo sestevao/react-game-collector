@@ -8,7 +8,8 @@ import {
   markNotificationSeen,
   checkPricesForAlerts,
   getGames,
-  createPriceAlert
+  createPriceAlert,
+  getGameImageUrl
 } from '../utils/api';
 import useSettings from '../hooks/useSettings';
 
@@ -225,7 +226,7 @@ const PriceAlerts = () => {
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-gray-200 dark:bg-gray-900 rounded-xl overflow-hidden flex-shrink-0">
                       <img
-                        src={alert.image_url || 'https://placehold.co/300x300?text=No+Image'}
+                        src={alert.has_image ? getGameImageUrl(alert.game_id) : (alert.image_url || 'https://placehold.co/300x300?text=No+Image')}
                         className="w-full h-full object-cover"
                         alt={alert.title}
                       />
@@ -304,7 +305,7 @@ const PriceAlerts = () => {
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-gray-200 dark:bg-gray-900 rounded-xl overflow-hidden flex-shrink-0">
                       <img
-                        src={notification.image_url || 'https://placehold.co/300x300?text=No+Image'}
+                        src={notification.has_image ? getGameImageUrl(notification.game_id) : (notification.image_url || 'https://placehold.co/300x300?text=No+Image')}
                         className="w-full h-full object-cover"
                         alt={notification.title}
                       />

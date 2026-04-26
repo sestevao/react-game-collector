@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getGameStatistics } from '../utils/api';
+import { getGameStatistics, getGameImageSrc } from '../utils/api';
 
 const Statistics = () => {
   const [stats, setStats] = useState({
@@ -157,8 +157,8 @@ const Statistics = () => {
                   <div key={game.id} className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-2 last:border-0">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gray-200 dark:bg-gray-900 rounded overflow-hidden flex-shrink-0">
-                        {game.image_url && (
-                          <img src={game.image_url} className="w-full h-full object-cover" alt={game.title} />
+                        {(game.has_image || game.image_url) && (
+                          <img src={getGameImageSrc(game, '')} className="w-full h-full object-cover" alt={game.title} />
                         )}
                       </div>
                       <div>
