@@ -91,11 +91,18 @@ const GameLibrary = () => {
   };
 
   const handleFilterChange = (key, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value,
-      page: 1 // Reset to first page when filtering
-    }));
+    setFilters(prev => {
+      const next = {
+        ...prev,
+        [key]: value
+      };
+
+      if (key !== 'page') {
+        next.page = 1;
+      }
+
+      return next;
+    });
   };
 
   const pickScannedTitle = (rawText) => {
@@ -697,7 +704,7 @@ const GameLibrary = () => {
             
             <div className="flex items-center gap-2">
               <button
-                onClick={() => handleFilterChange('page', filters.page - 1)}
+                onClick={() => handleFilterChange('page', games.pagination.current_page - 1)}
                 disabled={!games.pagination.has_prev}
                 className="px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
@@ -735,7 +742,7 @@ const GameLibrary = () => {
               </div>
               
               <button
-                onClick={() => handleFilterChange('page', filters.page + 1)}
+                onClick={() => handleFilterChange('page', games.pagination.current_page + 1)}
                 disabled={!games.pagination.has_next}
                 className="px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
