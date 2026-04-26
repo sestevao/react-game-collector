@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getGames, getPlatforms, createGame, updateGame, deleteGame, bulkCreateGames, importGames, checkDuplicate } from '../utils/api';
+import { getGames, getPlatforms, createGame, updateGame, deleteGame, bulkCreateGames, importGames } from '../utils/api';
 import GameCard from '../components/GameCard';
 import GameSearchAutocomplete from '../components/GameSearchAutocomplete';
 
@@ -47,6 +47,9 @@ const GameLibrary = () => {
   const [importData, setImportData] = useState([]);
   const [importFile, setImportFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [skipImportDuplicates, setSkipImportDuplicates] = useState(true);
+  const [importParseErrors, setImportParseErrors] = useState([]);
+  const [importSummary, setImportSummary] = useState({ totalRows: 0, ready: 0, skipped: 0 });
 
   // Duplicate warning state
   const [duplicateWarning, setDuplicateWarning] = useState(null);
@@ -170,6 +173,241 @@ const GameLibrary = () => {
     });
   };
 
+  const resetImport = () => {
+    setImportFile(null);
+    setImportData([]);
+    setImportLoading(false);
+    setImportParseErrors([]);
+    setImportSummary({ totalRows: 0, ready: 0, skipped: 0 });
+    setSkipImportDuplicates(true);
+  };
+
+  const normalizeCsvKey = (value) => String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '_');
+
+  const parseCsvToRows = (text) => {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+
+      if (inQuotes) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field += ch;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inQuotes = true;
+        continue;
+      }
+
+      if (ch === ',') {
+        row.push(field);
+        field = '';
+        continue;
+      }
+
+      if (ch === '\r') {
+        continue;
+      }
+
+      if (ch === '\n') {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = '';
+        continue;
+      }
+
+      field += ch;
+    }
+
+    row.push(field);
+    rows.push(row);
+
+    return rows
+      .map(r => r.map(cell => String(cell ?? '').trim()))
+      .filter(r => r.some(cell => cell.length > 0));
+  };
+
+  const parseCurrencyNumber = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const cleaned = raw.replace(/[^0-9.\-]/g, '');
+    const n = Number.parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const parsePurchasedValue = (value) => {
+    if (typeof value === 'boolean') return value;
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (!raw) return true;
+    if (['yes', 'y', 'true', '1', 'owned', 'purchased'].includes(raw)) return true;
+    if (['no', 'n', 'false', '0', 'wishlist'].includes(raw)) return false;
+    return true;
+  };
+
+  const parseReleasedAt = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+      const [dd, mm, yyyy] = raw.split('/');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+  };
+
+  const findPlatformIdFromCsv = (platformName) => {
+    const raw = String(platformName ?? '').trim();
+    if (!raw) return '';
+    const normalized = raw.toLowerCase();
+    const match = platforms.find(p => p.name.toLowerCase() === normalized || p.slug?.toLowerCase() === normalized);
+    return match ? String(match.id) : '';
+  };
+
+  const parseGamesFromCsv = (csvText) => {
+    const rows = parseCsvToRows(csvText);
+    if (rows.length === 0) return { games: [], errors: ['CSV is empty'] };
+
+    const header = rows[0].map(normalizeCsvKey);
+    const body = rows.slice(1);
+
+    const games = [];
+    const errors = [];
+
+    body.forEach((cells, idx) => {
+      const rowNumber = idx + 2;
+      const obj = {};
+      header.forEach((key, i) => {
+        obj[key] = cells[i] ?? '';
+      });
+
+      const title = String(obj.title ?? '').trim();
+      const platform_id = findPlatformIdFromCsv(obj.platform);
+
+      if (!title) {
+        errors.push(`Row ${rowNumber}: missing Title`);
+        return;
+      }
+
+      if (!platform_id) {
+        errors.push(`Row ${rowNumber}: unknown Platform "${obj.platform || ''}"`);
+        return;
+      }
+
+      games.push({
+        title,
+        platform_id,
+        purchased: parsePurchasedValue(obj.purchased),
+        status: String(obj.status || 'uncategorized').trim() || 'uncategorized',
+        price: parseCurrencyNumber(obj.price),
+        current_price: parseCurrencyNumber(obj.current_price),
+        price_source: String(obj.price_source || '').trim() || null,
+        purchase_location: String(obj.purchase_location || '').trim() || null,
+        released_at: parseReleasedAt(obj.released_at),
+        genres: String(obj.genres || '').trim() || null,
+        rating: parseCurrencyNumber(obj.rating),
+        metascore: obj.metascore ? Number.parseInt(String(obj.metascore).trim(), 10) : null,
+        notes: String(obj.notes || '').trim() || null
+      });
+    });
+
+    return { games, errors };
+  };
+
+  const downloadImportTemplate = () => {
+    const header = [
+      'Title',
+      'Platform',
+      'Purchased',
+      'Status',
+      'Price',
+      'Current Price',
+      'Price Source',
+      'Purchase Location',
+      'Released At',
+      'Genres',
+      'Rating',
+      'Metascore'
+    ].join(',');
+
+    const example = [
+      'A.O.T. 2',
+      'PlayStation 4',
+      'yes',
+      'uncategorized',
+      '39.99',
+      '39.99',
+      'PlayStation Store',
+      '',
+      '18/04/2018',
+      'Action',
+      '',
+      '75'
+    ].map(v => (String(v).includes(',') ? `"${String(v).replaceAll('"', '""')}"` : String(v))).join(',');
+
+    const blob = new Blob([`${header}\n${example}\n`], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `game-collection-import-template.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFileChange = async (file) => {
+    setImportFile(file);
+    setImportParseErrors([]);
+    setImportData([]);
+    setImportSummary({ totalRows: 0, ready: 0, skipped: 0 });
+
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const { games: parsed, errors } = parseGamesFromCsv(text);
+      setImportData(parsed);
+      setImportParseErrors(errors);
+      setImportSummary({ totalRows: Math.max(0, parseCsvToRows(text).length - 1), ready: parsed.length, skipped: errors.length });
+    } catch (e) {
+      setImportParseErrors([`Failed to read file: ${e?.message || String(e)}`]);
+    }
+  };
+
+  const handleImportSubmit = async () => {
+    if (importData.length === 0) return;
+
+    try {
+      setImportLoading(true);
+      const response = await importGames(importData, skipImportDuplicates);
+      alert(response.data?.message || 'Import completed');
+      setShowImportModal(false);
+      resetImport();
+      fetchGames();
+    } catch (error) {
+      console.error('Error importing games:', error);
+      alert('Failed to import games. Please check your CSV and try again.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('en-GB', {
       style: 'currency',
@@ -214,7 +452,10 @@ const GameLibrary = () => {
               Add Game
             </button>
             <button
-              onClick={() => setShowImportModal(true)}
+              onClick={() => {
+                resetImport();
+                setShowImportModal(true);
+              }}
               className="px-4 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition"
             >
               Import
@@ -662,6 +903,114 @@ const GameLibrary = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {showImportModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Import from CSV</h2>
+                <button
+                  type="button"
+                  onClick={downloadImportTemplate}
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 font-bold rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+                >
+                  Download template
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    CSV file
+                  </label>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(e) => handleImportFileChange(e.target.files?.[0] || null)}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm"
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    Rows: {importSummary.totalRows} • Ready: {importSummary.ready} • Skipped: {importSummary.skipped}
+                  </div>
+                  <label className="flex items-center text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={skipImportDuplicates}
+                      onChange={(e) => setSkipImportDuplicates(e.target.checked)}
+                      className="mr-2"
+                    />
+                    Skip duplicates
+                  </label>
+                </div>
+
+                {importParseErrors.length > 0 && (
+                  <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                    <div className="text-sm font-bold text-red-800 dark:text-red-300">Skipped rows</div>
+                    <ul className="mt-2 text-sm text-red-700 dark:text-red-300 max-h-32 overflow-y-auto list-disc pl-5">
+                      {importParseErrors.slice(0, 50).map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {importData.length > 0 && (
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <div className="px-4 py-2 bg-gray-50 dark:bg-gray-700/50 text-sm font-bold text-gray-700 dark:text-gray-200">
+                      Preview (first 10)
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-white dark:bg-gray-800">
+                          <tr className="text-left text-gray-500 dark:text-gray-400">
+                            <th className="px-4 py-2">Title</th>
+                            <th className="px-4 py-2">Platform</th>
+                            <th className="px-4 py-2">Purchased</th>
+                            <th className="px-4 py-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                          {importData.slice(0, 10).map((g, i) => (
+                            <tr key={i} className="text-gray-900 dark:text-gray-100">
+                              <td className="px-4 py-2">{g.title}</td>
+                              <td className="px-4 py-2">{platforms.find(p => String(p.id) === String(g.platform_id))?.name || g.platform_id}</td>
+                              <td className="px-4 py-2">{g.purchased ? 'yes' : 'no'}</td>
+                              <td className="px-4 py-2">{g.status || 'uncategorized'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={importLoading || importData.length === 0}
+                    onClick={handleImportSubmit}
+                    className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {importLoading ? 'Importing…' : `Import ${importData.length} games`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowImportModal(false);
+                      resetImport();
+                    }}
+                    className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -9,6 +9,7 @@ const __dirname = dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const BODY_LIMIT = process.env.BODY_LIMIT || '10mb';
 
 // Middleware
 app.use(cors({
@@ -16,7 +17,8 @@ app.use(cors({
     ? ['https://your-app.vercel.app'] // Replace with your actual Vercel domain
     : ['http://localhost:5173', 'http://localhost:3000']
 }));
-app.use(express.json());
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 
 // Database setup
 const db = new sqlite3.Database(join(__dirname, 'database.sqlite'));
