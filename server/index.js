@@ -78,6 +78,8 @@ db.serialize(() => {
       purchase_location TEXT,
       purchased BOOLEAN DEFAULT 0,
       image_url TEXT,
+      image_data BLOB,
+      image_mime TEXT,
       metascore INTEGER,
       released_at DATE,
       genres TEXT,
@@ -97,6 +99,22 @@ db.serialize(() => {
     // Ignore error if column already exists
     if (err && !err.message.includes('duplicate column name')) {
       console.error('Error adding notes column:', err);
+    }
+  });
+
+  db.run(`
+    ALTER TABLE games ADD COLUMN image_data BLOB
+  `, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      console.error('Error adding image_data column:', err);
+    }
+  });
+
+  db.run(`
+    ALTER TABLE games ADD COLUMN image_mime TEXT
+  `, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      console.error('Error adding image_mime column:', err);
     }
   });
 
@@ -248,6 +266,16 @@ db.serialize(() => {
     );
   });
 });
+
+const MAX_IMAGE_BYTES = Number.parseInt(process.env.MAX_IMAGE_BYTES || '4000000', 10);
+
+const parseBase64Image = (value) => {
+  if (!value) return null;
+  const str = String(value);
+  const match = str.match(/^data:([^;]+);base64,(.+)$/);
+  if (match) return { mime: match[1], base64: match[2] };
+  return { mime: null, base64: str };
+};
 
 // API Routes
 
