@@ -11,6 +11,7 @@ const Dashboard = () => {
   });
   const [recentGames, setRecentGames] = useState([]);
   const [milestones, setMilestones] = useState([]);
+  const [showAllMilestones, setShowAllMilestones] = useState(false);
   const [loading, setLoading] = useState(true);
   const { formatCurrency } = useSettings();
 
@@ -58,6 +59,8 @@ const Dashboard = () => {
       </div>
     );
   }
+
+  const displayedMilestones = showAllMilestones ? milestones : milestones.slice(0, 16);
 
   return (
     <div className="py-8">
@@ -151,13 +154,24 @@ const Dashboard = () => {
           <div className="mb-12">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-black text-gray-900 dark:text-white">Collection Milestones</h2>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {milestones.filter(m => m.unlocked).length} of {milestones.length} unlocked
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {milestones.filter(m => m.unlocked).length} of {milestones.length} unlocked
+                </div>
+                {milestones.length > 16 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMilestones(v => !v)}
+                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium text-sm"
+                  >
+                    {showAllMilestones ? 'Show less' : 'Show all'}
+                  </button>
+                )}
               </div>
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-              {milestones.slice(0, 16).map(milestone => (
+              {displayedMilestones.map(milestone => (
                 <div
                   key={milestone.id}
                   className={`group bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border transition-all duration-300 ${
